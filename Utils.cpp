@@ -1,22 +1,4 @@
-#include <fstream>
-using std::ifstream;
-using std::ios_base;
-#include <string>
-using std::string;
-#include <windows.h>
-
-#include <iostream>
-using namespace::std;
-#include <memory>
-#include <limits>
-#include <cassert>
-#include "constants.h"
-#include <hash_map>
-using stdext::hash_map;
 #include "Utils.h"
-#include <assert.h>
-#include "FileEncoding.h"
-#include <algorithm>
 
 void upToLowCase(char *buf,int bufLen)
 {
@@ -33,21 +15,6 @@ void upToLowCase(char *buf,int bufLen)
 }
 
 
-File::File(const string& file)
-:_fileName(file),_keyToUnicode(NULL),_maxKey(_keyLowBond)
-{
-	
-}
-
-File::~File()
-{
-	if(NULL != _keyToUnicode)
-	{
-		delete[] _keyToUnicode;
-		_keyToUnicode = NULL;
-		_maxKey = _keyLowBond;
-	}
-}
 
 wchar_t* multCharSetToWide(const char * buf,int bufLen,int *realNumLen)
 {
@@ -71,149 +38,6 @@ wchar_t* multCharSetToWide(const char * buf,int bufLen,int *realNumLen)
 	return szWcsBuffer;
 }
 
-//#define OCC_ORDER
-
-void File::compressContent(char *buf,int bufLen,wchar_t* &bytes,int *realNumLen,int *alphabetSize,bool upLowCaseSensitive)
-{
-	setlocale(LC_ALL,"chs");
-	if(!upLowCaseSensitive)
-	{
-		upToLowCase(buf,bufLen);
-	}
-	//wchar_t 能保存的最大值
-	const int keySize = (1 << (sizeof(wchar_t) * 8)) - 1;
-	wchar_t keyToUnicode [keySize];		//key -> unicode | key > 0
-	wchar_t unicodeToKey[keySize];			//unicode -> key | unicode > 0
-
-	for (int i = 0;i < keySize;++ i)
-	{
-		*(unicodeToKey+i) = _keyLowBond;
-		*(keyToUnicode+i) = _keyLowBond;
-	}
-	
-	wchar_t *szWcsBuffer;
-	szWcsBuffer = multCharSetToWide(buf,bufLen,realNumLen);
-	bytes = new wchar_t[*realNumLen];
-	memset(bytes,0,sizeof(wchar_t) * *realNumLen);
-
-	wchar_t curKey = _keyLowBond + 1;
-	//由字符原来的大小决定编码的大小，与原相对大小保持一致
-#ifndef OCC_ORDER
-	vector<wchar_t> sw;
-		wchar_t wMap[keySize] = {0};
-		for (int i = 0;i < *realNumLen;++ i)
-		{
-			if(0 == wMap[szWcsBuffer[i]])
-			{
-				wMap[szWcsBuffer[i]] = 1;
-				sw.push_back(szWcsBuffer[i]);
-			}
-		}
-		
-		sort(sw.begin(),sw.end());
-		for (int i = 0;i < sw.size();++ i)
-		{
-			curKey = i + _keyLowBond + 1;
-			unicodeToKey[sw[i]] = curKey;
-			keyToUnicode[curKey] = sw[i];
-		}
-		++ curKey;
-		for (int i = 0;i < *realNumLen;++ i)
-		{
-			bytes[i] = unicodeToKey[szWcsBuffer[i]];
-		}
-#else
-	//由字符出现的先后顺序决定字符的相对大小：先出现的字符的编码相对较小
-	for (int i = 0;i < *realNumLen && curKey != keySize;++ i)
-	{
-		if(_keyLowBond == *(unicodeToKey + *(szWcsBuffer + i)))
-		{
-			*(unicodeToKey + *(szWcsBuffer + i)) = curKey;
-			*(keyToUnicode + curKey) = *(szWcsBuffer + i);
-			*(bytes + i) = curKey;
-			++ curKey;
-		}
-		else
-		{
-			*(bytes + i) = *(unicodeToKey + *(szWcsBuffer + i));
-		}
-	}
-	if(curKey >= keySize)
-	{
-		printf("====check the encoding of file====\r\n");
-		exit(3);
-	}
-#endif
-	//debug 模式下回收内存非常慢
-#ifndef _DEBUG	
-	free(szWcsBuffer);	
-#else
-#endif
-	*alphabetSize = curKey -_keyLowBond;	//每个 bytes 处于 (_keyLowBond) ~ (curKey - 1)
-
-	if(NULL != _keyToUnicode)
-	{
-		delete[] _keyToUnicode;
-	}	
-	_keyToUnicode = new wchar_t[curKey];
-	memcpy_s(_keyToUnicode,curKey * sizeof(wchar_t),keyToUnicode,sizeof(wchar_t) * curKey);
-	_maxKey = curKey-1;
-	
-}
-
-/************************************************************************/
-/* 
-从UTF-8编码的文件 fileName 中读入内容，将每个字符映射为一个 KEY，形成
-一个 wchar_t 数组；返回不同的 KEY 的个数，alphabetSize
-
-ints的大小
-*/
-/************************************************************************/
-void File:: toWchars(wchar_t* &ints,int *realIntsCounts,int *alphabetSize,bool upLowCaseSensitive)
-{
-	HANDLE hFile = 
-		CreateFileA(_fileName.c_str()
-		, GENERIC_READ
-		, FILE_SHARE_READ
-		, NULL
-		, OPEN_EXISTING
-		, FILE_ATTRIBUTE_NORMAL
-		, NULL);
-
-	if(hFile == INVALID_HANDLE_VALUE)
-	{   
-		printf("Could not open file \"%s\" (error %d)\n",_fileName.c_str(), GetLastError()); 
-		exit(-2);
-	}
-
-	int size = GetFileSize(hFile, NULL);
-
-	HANDLE hMapFile =
-		CreateFileMapping(hFile
-		, NULL
-		, PAGE_READONLY 
-		, 0
-		, size
-		, NULL);
-
-
-
-	char* pBuff
-		= (char*)MapViewOfFile(hMapFile
-		, FILE_MAP_READ 
-		, 0
-		, 0
-		, 0);
-	
-	char *dupBuff = new char[size];
-	memcpy_s(dupBuff,size,pBuff,size);
-	UnmapViewOfFile(pBuff);
-	CloseHandle(hMapFile);
-	CloseHandle(hFile);
-
-	compressContent(dupBuff,size,ints,realIntsCounts,alphabetSize,upLowCaseSensitive);
-	
-}
 
 void intsToFile(int *ints,int len,const string &fileName)
 {
@@ -344,164 +168,6 @@ int maxValue(int *sorArray,int start,int end,int *index = NULL)
 
 
 
-
-//初始化正向的 t1LengthArray
-template<typename CHAR_TYPE>
-inline int* initT1Length(const CHAR_TYPE *pStr,size_t totalLength)
-{
-	const CHAR_TYPE firstChar = *pStr;
-	CHAR_TYPE lastChar;	//最后一个字符
-	CHAR_TYPE beforeLastChar;	//倒数第二个字符
-	int lastT1Length;	//上一次求的 t1 的长度
-
-	int *t1Length = new int[totalLength + 1];// t1Length[i] 表示字符串 pStr[0 ~ i-1] 求得的 t1 的长度
-	memset(t1Length,0,sizeof(int) * (1 + totalLength));
-	t1Length[0] = t1Length[1] = 0;
-	for (int i = 2;i <= totalLength;++ i)
-	{
-		lastT1Length = t1Length[i-1];	//前一个，所以是 i - 1
-		if(0 == lastT1Length)	//前一个字母没有对应
-		{
-			t1Length[i] = (firstChar == *(pStr + i - 1));
-		}
-		else
-		{
-			lastChar = *(pStr + i - 1);
-			beforeLastChar = *(pStr + i - 2);
-			while(0 != lastT1Length && *(pStr + lastT1Length) != lastChar)	//对应字符的后面一个字符如果与最后一个字符相等则退出
-			{
-				lastT1Length = t1Length[lastT1Length];
-			}
-			if(0 != lastT1Length)	//因为 *(pStr + lastT1Length) == lastChar 跳出的循环
-			{
-				t1Length[i] = lastT1Length + 1;
-			}
-			else
-			{
-				t1Length[i] = (firstChar == *(pStr + i - 1));
-			}
-		}
-	}
-	return t1Length;
-}
-
-
-//正向搜索
-template<typename CHAR_TYPE>
-inline int firstIndexOf(const CHAR_TYPE *sourceStr,int sLength,const CHAR_TYPE *pStr,int pLength,int beginPos,int* t1Length)
-{
-	int firstIndex = -1;
-	for (int i = beginPos,j=0;i < sLength;)
-	{
-		if(*(sourceStr + i) != *(pStr + j))
-		{
-			if(0 == j)
-			{
-				++ i;
-				//j = 0;//可省略
-			}
-			else if(1 == j)
-			{
-				j = 0;
-			}
-			else 
-			{
-				//i 不变，j 向前移动
-				j = *(t1Length + j);
-			}
-		}
-		else
-		{
-			++ j;
-			++ i;
-			if(pLength == j)
-			{
-				firstIndex = i - pLength;
-				break;
-			}
-		}
-	}
-	return firstIndex;
-}
-
-#include <vector>
-using std::vector;
-#include <algorithm>
-
-template<typename CHAR_TYPE>
-inline int countIn(const CHAR_TYPE *sourceStr,int sLength,const CHAR_TYPE *pStr,int pLength,int beginPos,int* t1Length)
-{
-	int counter = 0;
-	int occIndex = firstIndexOf(sourceStr,sLength,pStr,pLength,beginPos,t1Length);
-	while (-1 != occIndex)
-	{
-		occIndex = firstIndexOf(sourceStr,sLength,pStr,pLength,occIndex + pLength,t1Length);
-		++ counter;
-	}
-	return counter;
-}
-
-template<typename CHAR_TYPE>
-int charsLen(const CHAR_TYPE *sor)
-{
-	assert(NULL != sor);
-	int i = 0;
-	while(0 != *sor)
-	{
-		++ i;
-		sor += 1;
-	}
-	return i;
-}
-
-template<typename CHAR_TYPE>
-int normalCounts(CHAR_TYPE* sStr,CHAR_TYPE * pStr)
-{
-	int ncounts = 0;
-	int sLen = charsLen(sStr);
-	int pLen = charsLen(pStr);
-	for (int i = 0;i < sLen;)
-	{
-		int recordI = i;
-		if(sLen - i < pLen)	//i ~ sLen - 1 
-		{
-			break;
-		}
-		else
-		{
-			int j = 0;
-			for (j = 0;j < pLen;++ j,++ i)
-			{
-				if (sStr[i] != pStr[j])
-				{
-					break;
-				}
-			}
-			if(j == pLen)	//匹配
-			{
-				++ ncounts;
-				i = recordI + pLen;
-			}
-			else
-			{
-				i = recordI + 1;
-			}
-		}
-	}
-	return ncounts;
-}
-
-//获得一个随机的字符串，测试用
-template<typename CHAR_TYPE>
-void randomStr(CHAR_TYPE *str,int maxLen,int seed = 0)
-{
-	if(0 == seed) srand((unsigned)time(NULL));  /*随机种子*/
-	//97 ~ 122
-	for (int i = 0;i < maxLen;++ i)
-	{
-		*(str + i) = rand() % 26 + 97;
-	}
-}
 #include <ctime>
 #include <cmath>
 void testKmpPerfomance()
@@ -586,21 +252,6 @@ void testKMP()
 	wprintf(L"count %s in %s is : %d\r\n",pStr,sStr,countIn<wchar_t>(sStr,charsLen(sStr),pStr,charsLen(pStr),0,t1Length));
 }
 
-template<typename char_type>
-void getnext(const char_type* str,int len,int *next)
-{      
-	int i=0,j=-1;
-	next[0]=-1;
-	while(i < len)
-	{
-		if(j==-1 || str[i]==str[j])
-		{
-			next[++ i] = ++j;
-		}
-		else
-			j=next[j];
-	}
-}
 
 
 int * getnext(const char* str,int len)
@@ -665,12 +316,31 @@ void testNextPerformance()
 	
 }
 
-/************************************************************************/
-/* 
-	kmp 算法中的 next 数组
-*/
-/************************************************************************/
-int *getWcharsNext(const wchar_t * pStr,size_t totalLength)
+
+void doWSync(ostream *file,bool display,wchar_t *theChs,int nDocLength,int fpCounter)
 {
-	return initT1Length(pStr,totalLength);
+	//第一个参数表示目标字符串的代码页
+	//这个参数只影响输出文件的编码，如果设置为 0 则使用系统默认的代码页，即 asscii 编码。如果使用 UTF-8，则输出的文件编码为 UTF-8
+	int nMBLen = WideCharToMultiByte(CP_UTF8, 0,theChs, nDocLength, NULL, 0, NULL, NULL);
+	char* pBuffer = new char[nMBLen+1];
+	pBuffer[nMBLen] = 0;
+	WideCharToMultiByte(CP_UTF8, 0,theChs, nDocLength, pBuffer, nMBLen+1, NULL, NULL);
+	if(NULL != file)	*file << pBuffer << " : " << fpCounter << "\n";
+	if(display)	wprintf(L"%s : %d\r\n",theChs,fpCounter);
+	delete[] pBuffer;
+}
+
+void doByteSync(ostream *file,bool display,byte *theChs,int nDocLength,int fpCounter)
+{
+	//第一个参数表示目标字符串的代码页
+	//这个参数只影响输出文件的编码，如果设置为 0 则使用系统默认的代码页，即 asscii 编码。如果使用 UTF-8，则输出的文件编码为 UTF-8
+
+	if(NULL != file)	//*file << theChs << " : " << fpCounter << "\n";
+		*file << nDocLength << " : " << fpCounter << "\n";
+	if(display)
+	{
+		for(int i = 0;i < nDocLength;++ i)
+			printf("%c",theChs[i]);
+		printf(" : %d\r\n",fpCounter);
+	}
 }

@@ -326,23 +326,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\CircleString.cpp"
-				>
-			</File>
-			<File
 				RelativePath=".\FileEncoding.cpp"
 				>
 			</File>
 			<File
-				RelativePath=".\FPSGettor.cpp"
-				>
-			</File>
-			<File
 				RelativePath=".\FrequentMinning.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\itssort.cpp"
 				>
 			</File>
 			<File
@@ -375,6 +363,10 @@
 			</File>
 			<File
 				RelativePath=".\main.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\MiningFile.cpp"
 				>
 			</File>
 			<File
@@ -504,11 +496,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\itssort.h"
+				RelativePath="..\FileEncoding\JpCntx.h"
 				>
 			</File>
 			<File
-				RelativePath="..\FileEncoding\JpCntx.h"
+				RelativePath=".\MiningFile.h"
 				>
 			</File>
 			<File

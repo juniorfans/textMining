@@ -1139,6 +1139,9 @@ typedef typename std::iterator_traits<StringIterator_type>::value_type value_typ
 	while((0 <= --i) && (T[i] >= T[i + 1]));
     if(0 <= i) {
       /* type B* suffix. */
+		//int index = ((alphabetsize_type)(T[i])) * alphabetsize + (alphabetsize_type)(T[i + 1]);
+		//if(index <0 || index >= alphabetsize*alphabetsize)
+
       ++BUCKET_BSTAR(T[i], T[i + 1]);
       SA[--m] = i;
       /* type B suffix. */

@@ -1,6 +1,3 @@
-
-#include "itssort.h"
-
 #include <cstdio>
 #include <cstdlib>
 
@@ -11,6 +8,7 @@ using std::ofstream;
 using std::ios_base;
 #include "constants.h"
 #include "Utils.h"
+#include "MiningFile.h"
 #include <iostream>
 #include <cassert>
 #include <windows.h>
@@ -29,6 +27,7 @@ using std::stringstream;
 #include "TopK.h"
 #include "FPSGettor.h"
 #include "FrequentMinning.h"
+#include "Utils.h"
 
 //#define DEBUG_OUTPUT
 
@@ -45,10 +44,18 @@ FrequentMinning::~FrequentMinning()
 
 void FrequentMinning::init()
 {
-	_file = new File(_fconfig._fileName);
-	_file->toWchars(_content,&_len,&_alphabetSize,_fconfig._upLowCaseSensitive);
-	_SA = new int[_len];
-	_height = new int[_len];
+	if(_fconfig._binaryFile)
+	{	
+		_file = new BinaryFile(_fconfig._fileName);
+		_file->toTchars();
+	}
+	else
+	{	
+		_file = new TextFile(_fconfig._fileName,_fconfig._upLowCaseSensitive);
+		_file->toTchars();
+	}
+	_SA = new int[_file->getRealCounts()];
+	_height = new int[_file->getRealCounts()];
 }
 
 void FrequentMinning::destroy()
@@ -62,11 +69,6 @@ void FrequentMinning::destroy()
 	{
 		delete[] _height;
 		_height = NULL;
-	}
-	if(NULL != _content)
-	{
-		delete[] _content;
-		_content = NULL;
 	}
 	if(NULL != _file)
 	{
@@ -96,6 +98,17 @@ void FrequentMinning::minning()
 	init();
 	finish = clock();
 	printf("finished.Cost : %d\r\n",finish - start);
+	_len = _file->getRealCounts();
+	char_content = (byte*) _file->toTchars();
+	wchar_content = (wchar_t*) _file->toTchars();
+	_alphabetSize = _file->getAlphabetSize();
+
+	for (int x = 0;x < _len;++ x)
+	{
+		if(!(char_content >= 0 && char_content[x] < 256))
+			printf("not resonable\r\n");
+	}
+	
 
 	if(0 == _len)
 	{
@@ -119,7 +132,14 @@ void FrequentMinning::minning()
 		exit(-2);
 	}
 #else
-	divsufsortxx::constructSA(_content,_content+_len,_SA,_SA+_len,_alphabetSize);
+	if(_fconfig._binaryFile)
+	{
+		divsufsortxx::constructSA(char_content,char_content+_len,_SA,_SA+_len,_alphabetSize);
+	}
+	else
+	{
+		divsufsortxx::constructSA(wchar_content,wchar_content+_len,_SA,_SA+_len,_alphabetSize);
+	}
 #endif
 
 	finish = clock();
@@ -142,16 +162,22 @@ void FrequentMinning::minning()
 	FPSFilter fft;
 	fft._limits = _fconfig._fpsListNums;
 	fft._minLen = _fconfig._minLen;
-	//fft._formatFps = _fconfig._formatFps;
-	fft._formatFps_removeStartWchars = _fconfig._formatFps_removeFpsStartWchars;
 	fft._order = _fconfig._fpsOrder;
 	fft._support = _fconfig._support;
 	fft._pureCount = _fconfig._pureCount;
 	fft._pureCountEx = _fconfig._pureCountEx;
 	
-	FPSGettor allFs(fft,_height,_SA,_len,_file->getKeyToUnicodeMap(),_content);
-
-	_fps = allFs.getFS(_fpsSize);
+	if(_fconfig._binaryFile)
+	{
+		FPSGettor<byte> allFs(fft,_height,_SA,char_content,_len);
+		_fps = allFs.getFS(_fpsSize);
+	}
+	else
+	{
+		FPSGettor<wchar_t> allFs(fft,_height,_SA,wchar_content,_len);
+		_fps = allFs.getFS(_fpsSize);
+	}
+	
 	
 	finish = clock();
 	printf("finished.Cost : %d millsecs\r\n",finish - start);
@@ -190,64 +216,25 @@ void FrequentMinning:: calHeight()
 			if(k > 0)k --;
 			continue;	//排在第 0 名前面的不存在
 		}
-		for(k?k--:0,j= *(_SA + *(rank+i)-1);*(_content + (i+k))==*(_content + (j+k));k++);
+
+		if(_fconfig._binaryFile)
+		{
+			for(k?k--:0,j= *(_SA + *(rank+i)-1);*(char_content + (i+k))==*(char_content + (j+k));k++);
+		}
+		else
+		{
+			for(k?k--:0,j= *(_SA + *(rank+i)-1);*(wchar_content + (i+k))==*(wchar_content + (j+k));k++);
+		}
+		
 	}
 	delete[] rank;
 	return;
 }
 
-
-void FrequentMinning:: doSync(ostream *file,wchar_t *theChs,int nDocLength,int fpCounter)
+wchar_t * FrequentMinning::getWCharFpFromFsNode(FsNode * curFP,int &theLen)
 {
-	//第一个参数表示目标字符串的代码页
-	//这个参数只影响输出文件的编码，如果设置为 0 则使用系统默认的代码页，即 asscii 编码。如果使用 UTF-8，则输出的文件编码为 UTF-8
-	int nMBLen = WideCharToMultiByte(CP_UTF8, 0,theChs, nDocLength, NULL, 0, NULL, NULL);
-	char* pBuffer = new char[nMBLen+1];
-	pBuffer[nMBLen] = 0;
-	WideCharToMultiByte(CP_UTF8, 0,theChs, nDocLength, pBuffer, nMBLen+1, NULL, NULL);
-	if(NULL != file)	*file << pBuffer << " : " << fpCounter << "\n";
-	if(_fconfig._needDisplayFps)	wprintf(L"%s : %d\r\n",theChs,fpCounter);
-	delete[] pBuffer;
-}
+	TextFile *_tfile = (TextFile*)_file;
 
-
-wchar_t *FrequentMinning:: transformSepecialChars(wchar_t *inChs,int len,int &outLen)
-{
-	vector<wchar_t> theChs;
-	theChs.reserve(len);
-	int i = 0;
-	wchar_t curWch;
-	while (len != i)
-	{
-		curWch = inChs[i ++];
-		if ('\r' == curWch)
-		{
-			theChs.push_back('\\');
-			theChs.push_back('r');
-		}
-		else if ('\n' == curWch)
-		{
-			theChs.push_back('\\');
-			theChs.push_back('n');
-		}
-		else
-		{
-			theChs.push_back(curWch);
-		}
-	}
-	int nsize = theChs.size();
-	outLen = nsize + 1;
-	wchar_t *retChs = new wchar_t[outLen];
-	retChs[nsize] = 0;
-	for (int i = 0;i < nsize;++ i)
-	{
-		retChs[i] = theChs[i];
-	}
-	return retChs;
-}
-
-wchar_t * FrequentMinning::getFpFromFsNode(FsNode * curFP,int &theLen)
-{
 	int suffixIndex;
 	int suffixLen;
 	int fpCounter;
@@ -264,11 +251,32 @@ wchar_t * FrequentMinning::getFpFromFsNode(FsNode * curFP,int &theLen)
 	wchar_t curWCh;
 	while (suffixLen != i)
 	{
-		curWCh = _content[suffixIndex + i ++];
-		uCode = _file->keytoUnicode(curWCh);
+		curWCh = wchar_content[suffixIndex + i ++];
+		uCode = _tfile->keytoUnicode(curWCh);
 		theChs[i-1] = uCode;
 	}
 	return theChs;
+}
+
+byte * FrequentMinning::getByteFpFromFsNode(FsNode * curFP,int &theLen)
+{
+	int suffixIndex;
+	int suffixLen;
+	int fpCounter;
+
+	suffixLen = curFP->length;
+	suffixIndex = curFP->index;
+	fpCounter = curFP->counter;
+	theLen = suffixLen + 1;
+	return char_content + suffixIndex;
+	/*
+	char *theChs = new char[theLen];	//多一个 wchar_t放 '\0'
+	theChs[suffixLen] = 0;
+
+	memcpy_s(theChs,suffixLen,char_content + suffixIndex,suffixLen);
+
+	return theChs;
+	*/
 }
 
 void FrequentMinning::syncTo()
@@ -289,20 +297,41 @@ void FrequentMinning::syncTo()
 		curFP = *(_fps + j);
 		fpCounter = curFP->counter;
 		int fpsLen;
-		wchar_t *curFpStr = getFpFromFsNode(curFP,fpsLen);
-		if(_fconfig._formatFps_transform)
+
+		if(_fconfig._binaryFile)
 		{
-			int outLen;
-			wchar_t *realFpStr = transformSepecialChars(curFpStr,fpsLen,outLen);
-			doSync(outFile,realFpStr,outLen,fpCounter);
-			delete realFpStr;
+			byte *curFpStr = getByteFpFromFsNode(curFP,fpsLen);	//curFP 是 char_content 中的内容，不能 delete，交由 _file 去回收
+			if(_fconfig._formatFps_transform)
+			{
+				int outLen;
+				byte *realFpStr = transformSepecialChars(curFpStr,fpsLen,outLen);
+				doByteSync(outFile,_fconfig._needDisplayFps,realFpStr,outLen,fpCounter);
+				delete realFpStr;
+			}
+			else
+			{
+				doByteSync(outFile,_fconfig._needDisplayFps,curFpStr,fpsLen,fpCounter);
+			}
 		}
 		else
 		{
-			doSync(outFile,curFpStr,fpsLen,fpCounter);
+			wchar_t *curFpStr = getWCharFpFromFsNode(curFP,fpsLen);
+			if(_fconfig._formatFps_transform)
+			{
+				int outLen;
+				wchar_t *realFpStr = transformSepecialChars(curFpStr,fpsLen,outLen);
+				doWSync(outFile,_fconfig._needDisplayFps,realFpStr,outLen,fpCounter);
+				delete realFpStr;
+			}
+			else
+			{
+				doWSync(outFile,_fconfig._needDisplayFps,curFpStr,fpsLen,fpCounter);
+			}
+			delete curFpStr;
 		}
 		
-		delete curFpStr;
+		
+		
 	}
 	if(NULL != outFile)
 	{
@@ -318,15 +347,31 @@ void FrequentMinning::verifyHeight()
 	{
 		int lcp = _height[i];
 		//SA[i] 和 SA[i-1]是否公共前缀长度为 lcp
-		const wchar_t *l = _content + _SA[i],*r = _content + _SA[i - 1];
-		while(-1 != --lcp)
+		if(!_fconfig._binaryFile)
 		{
-			if(l[lcp] != r[lcp])
+			const wchar_t *l = wchar_content + _SA[i],*r = wchar_content + _SA[i - 1];
+			while(-1 != --lcp)
 			{
-				printf("verify failed.\r\n");
-				exit(-3);
+				if(l[lcp] != r[lcp])
+				{
+					printf("verify failed.\r\n");
+					exit(-3);
+				}
 			}
 		}
+		else
+		{
+			const byte *l = char_content + _SA[i],*r = char_content + _SA[i - 1];
+			while(-1 != --lcp)
+			{
+				if(l[lcp] != r[lcp])
+				{
+					printf("verify failed.\r\n");
+					exit(-3);
+				}
+			}
+		}
+		
 	}
 	printf("verify height success.\r\n");
 }
@@ -335,13 +380,27 @@ void FrequentMinning::verifyHeight()
 
 void FrequentMinning:: showSuffixAndHeight(int *height)
 {
-	for(int i = 1;i < _len;++ i)
+	if(!_fconfig._binaryFile)
 	{
-		printf("[%d] %d    ",i,height[i]);
-		for(int j = _SA[i];j < _len;++ j)
+		for(int i = 1;i < _len;++ i)
 		{
-			printf("%d ",_content[j]);
-		}printf("\r\n");
+			printf("[%d] %d    ",i,height[i]);
+			for(int j = _SA[i];j < _len;++ j)
+			{
+				printf("%d ",wchar_content[j]);
+			}printf("\r\n");
+		}
+	}
+	else
+	{
+		for(int i = 1;i < _len;++ i)
+		{
+			printf("[%d] %d    ",i,height[i]);
+			for(int j = _SA[i];j < _len;++ j)
+			{
+				printf("%d ",char_content[j]);
+			}printf("\r\n");
+		}
 	}
 }
 

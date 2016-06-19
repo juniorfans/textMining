@@ -11,7 +11,7 @@
 			<DebugSettings
 				Command="$(TargetPath)"
 				WorkingDirectory=""
-				CommandArguments="-f C:\Users\LZH\Desktop\Test\2.flv -s 20 -l 20 -m 1 -d 1"
+				CommandArguments="-f C:\2.txt -s 2 -l 20 -m 1 -d 1"
 				Attach="false"
 				DebuggerType="3"
 				Remote="1"

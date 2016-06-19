@@ -32,8 +32,11 @@ void frequentMinning(int argc,char **argv)
 {
 	cmdline::parser a;
 	
-	/*待挖掘的文件名 - 程序会正确分析文件的编码并处理好，不需指定编码*/
+	/*待挖掘的文件名*/
 	a.add<string>("file", 'f', "file to minning", true, "");
+
+	/*挖掘方式：二进制文件(还是文本文件) - 文本文件挖掘的结果是字符序列，二进制方式挖掘则是字节序列。可缺省，默认为二进制方式*/
+	a.add<int>("binaryFile", 'b', "file to minning", false, 1);
 
 	/*频繁序列的支持度。可缺省，默认值为 2*/
 	a.add<int>("support", 's', "support for frequent minning", false, 2);
@@ -75,6 +78,7 @@ void frequentMinning(int argc,char **argv)
 
 	FrequentConfig fconfig;
 	fconfig._fileName.assign(a.get<string>("file"));
+	fconfig._binaryFile = a.get<int>("binaryFile");
 	fconfig._support = a.get<int>("support");
 	fconfig._upLowCaseSensitive = (0!=a.get<int>("caseSensitive"));
 //	fconfig._formatFps = (0!=a.get<int>("format"));
@@ -86,7 +90,7 @@ void frequentMinning(int argc,char **argv)
 	fconfig._fpsListNums = a.get<int>("limitNumsOfFps");
 	fconfig._fpsOrder = a.get<int>("orderOfFps");
 	fconfig._fpsRemoveContained = (0 !=a.get<int>("removeContainedFps"));
-	fconfig._formatFps_removeFpsStartWchars = L" \t\r\n";
+	//fconfig._formatFps_removeFpsStartWchars = L" \t\r\n";
 	fconfig._formatFps_transform = (0!=a.get<int>("transformSpecialChars"));
 	FrequentMinning fpMinning(fconfig);
 	fpMinning.minning();
